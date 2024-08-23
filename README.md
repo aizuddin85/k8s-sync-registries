@@ -1,4 +1,4 @@
-![CodeQL](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/codeql-analysis.yml/badge.svg)
+![CodeQL](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/codeql.yml/badge.svg)
 
 
 ## License
