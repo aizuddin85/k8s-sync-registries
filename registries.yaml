@@ -1,0 +1,37 @@
+registries:
+  - source_registry: "registry.k8s.io"
+    source_repository: "kube-state-metrics/kube-state-metrics"
+    dest_registry: "europe-west3-docker.pkg.dev"
+    dest_repository: "$projects/kube-state-metrics/kube-state-metrics"
+    tag_limit: 3
+    exclude_patterns:
+      - "rc"
+      - "alpha"
+      - "beta"
+  - source_registry: "registry.k8s.io"
+    source_repository: "autoscaling/cluster-autoscaler"
+    dest_registry: "europe-west3-docker.pkg.dev"
+    dest_repository: "$project/autoscaling/cluster-autoscaler"
+    tag_limit: 5
+    exclude_patterns:
+      - "rc"
+      - "alpha"
+      - "beta"
+  - source_registry: "registry.k8s.io"
+    source_repository: "kube-state-metrics/kube-state-metrics"
+    dest_registry: "myregistry.azurecr.io"
+    dest_repository: "kube-state-metrics/kube-state-metrics"
+    tag_limit: 5
+    exclude_patterns:
+      - "rc"
+      - "alpha"
+      - "beta"
+  - source_registry: "registry.k8s.io"
+    source_repository: "autoscaling/cluster-autoscaler"
+    dest_registry: "myregistry.azurecr.io"
+    dest_repository: "autoscaling/cluster-autoscaler"
+    tag_limit: 5
+    exclude_patterns:
+      - "rc"
+      - "alpha"
+      - "beta"
