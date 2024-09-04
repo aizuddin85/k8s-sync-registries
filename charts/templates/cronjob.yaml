@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-sync
+  labels:
+    app: {{ .Release.Name }}
+spec:
+  schedule: {{ .Values.cronjob.schedule | quote }}
+  successfulJobsHistoryLimit: {{ .Values.cronjob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronjob.failedJobsHistoryLimit }}
+  concurrencyPolicy: {{ .Values.cronjob.concurrencyPolicy }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: sync-app
+            image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+            imagePullPolicy: {{ .Values.image.pullPolicy }}
+            env:
+              - name: REGISTRY_CONFIG_PATH
+                value: {{ .Values.env.REGISTRY_CONFIG_PATH }}
+              - name: SECRETS_CONFIG_PATH
+                value: {{ .Values.env.SECRETS_CONFIG_PATH }}
+            volumeMounts:
+              - name: config-volume
+                mountPath: /config
+              - name: secret-volume
+                mountPath: /secret
+              - name: gcr-volume
+                mountPath: /gcr
+            resources:
+              requests:
+                cpu: {{ .Values.resources.requests.cpu }}
+                memory: {{ .Values.resources.requests.memory }}
+              limits:
+                cpu: {{ .Values.resources.limits.cpu }}
+                memory: {{ .Values.resources.limits.memory }}
+          restartPolicy: OnFailure
+          volumes:
+          - name: secret-volume
+            secret:
+              secretName: registries-secret
+          - name: config-volume
+            configMap:
+              name: registries-config
+          - name: gcr-volume
+            secret:
+              secretName: registries-gcr-secret

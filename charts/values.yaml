@@ -1,0 +1,92 @@
+image:
+  repository: europe-west3-docker.pkg.dev/$gcp_project/image-mirror/syncer
+  tag: v1.0.0
+  pullPolicy: IfNotPresent
+
+cronjob:
+  schedule: "0 0 * * *"  # Every day at midnight
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: "Allow"
+
+env:
+  REGISTRY_CONFIG_PATH: "/config/registry.yaml"
+  SECRETS_CONFIG_PATH: "/secret/secrets.yaml"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+gcr:
+  secrets: "base64 json here"
+
+config:
+  registries:
+    - source_registry: "quay.io"
+      source_repository: "argoproj/argocd"
+      dest_registry: "europe-west3-docker.pkg.dev"
+      dest_repository: "$gcp_project/argocd/argocd"
+      tag_limit: 3
+      exclude_patterns:
+        - "alpine"
+        - "distroless"
+        - "sha"
+        - "poc"
+        - "release"
+        - "latest"
+        - "master"
+        - "rc"
+    - source_registry: "ghcr.io"
+      source_repository: "dexidp/dex"
+      dest_registry: "europe-west3-docker.pkg.dev"
+      dest_repository: "$gcp_project/argocd/dex"
+      tag_limit: 3
+      exclude_patterns:
+        - "alpine"
+        - "distroless"
+        - "sha"
+        - "poc"
+        - "release"
+        - "latest"
+        - "master"
+        - "rc"
+    - source_registry: "registry.k8s.io"
+      source_repository: "kube-state-metrics/kube-state-metrics"
+      dest_registry: "europe-west3-docker.pkg.dev"
+      dest_repository: "$gcp_project/kube-state-metrics/kube-state-metrics"
+      tag_limit: 3
+      exclude_patterns:
+        - "rc"
+        - "alpha"
+        - "beta"
+        - "sha"
+    - source_registry: "registry.k8s.io"
+      source_repository: "autoscaling/cluster-autoscaler"
+      dest_registry: "europe-west3-docker.pkg.dev"
+      dest_repository: "$gcp_project/autoscaling/cluster-autoscaler"
+      tag_limit: 5
+      exclude_patterns:
+        - "rc"
+        - "alpha"
+        - "beta"
+        - "sha"
+    - source_registry: "registry.k8s.io"
+      source_repository: "kube-state-metrics/kube-state-metrics"
+      dest_registry: "$acrregistry.azurecr.io"
+      dest_repository: "kube-state-metrics/kube-state-metrics"
+      tag_limit: 5
+      exclude_patterns:
+        - "sha"
+    - source_registry: "registry.k8s.io"
+      source_repository: "autoscaling/cluster-autoscaler"
+      dest_registry: "$acrregistry.azurecr.io"
+      dest_repository: "autoscaling/cluster-autoscaler"
+      tag_limit: 5
+      exclude_patterns:
+        - "sha"
+
+secrets:

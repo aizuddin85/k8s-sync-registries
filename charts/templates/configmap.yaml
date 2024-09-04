@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: registries-config
+  labels:
+    app: {{ .Release.Name }}
+data:
+  registry.yaml: |
+    registries:
+{{- range .Values.config.registries }}
+      - source_registry: "{{ .source_registry }}"
+        source_repository: "{{ .source_repository }}"
+        dest_registry: "{{ .dest_registry }}"
+        dest_repository: "{{ .dest_repository }}"
+        tag_limit: {{ .tag_limit }}
+        exclude_patterns:
+{{- range .exclude_patterns }}
+          - "{{ . }}"
+{{- end }}
+{{- end }}

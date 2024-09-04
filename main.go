@@ -5,15 +5,18 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"regexp"
 	"sort"
+	"sync"
 	"time"
+	"strings"
 
-	"github.com/briandowns/spinner"
 	"github.com/containers/image/v5/copy"
 	"github.com/containers/image/v5/docker"
 	"github.com/containers/image/v5/signature"
 	"github.com/containers/image/v5/types"
+	"github.com/blang/semver/v4"
 	"golang.org/x/oauth2/google"
 	"gopkg.in/yaml.v3"
 )
@@ -29,7 +32,9 @@ type RegistryConfig struct {
 
 type SecretConfig struct {
 	DestRegistry      string `yaml:"dest_registry"`
-	Type              string `yaml:"type"` // Registry type, e.g., "gcr", "acr"
+	SourceRegistry    string `yaml:"source_registry,omitempty"`
+	Type              string `yaml:"type"`           // Registry type, e.g., "gcr", "acr", "dockerhub"
+	SourceType        string `yaml:"source_type"`    // Source registry type, e.g., "dockerhub"
 	Username          string `yaml:"username,omitempty"`
 	Password          string `yaml:"password,omitempty"`
 	ServiceAccountKey string `yaml:"service_account_key,omitempty"`
@@ -44,17 +49,29 @@ type Secrets struct {
 }
 
 func main() {
+	// Fetch config paths from environment variables
+	registryConfigPath := os.Getenv("REGISTRY_CONFIG_PATH")
+	secretsConfigPath := os.Getenv("SECRETS_CONFIG_PATH")
+
+	if registryConfigPath == "" {
+		log.Fatalf("REGISTRY_CONFIG_PATH environment variable is not set")
+	}
+
+	if secretsConfigPath == "" {
+		log.Fatalf("SECRETS_CONFIG_PATH environment variable is not set")
+	}
+
 	log.Println("Starting the sync process...")
 
 	// Load the YAML configuration file
-	config, err := loadConfig("registries.yaml")
+	config, err := loadConfig(registryConfigPath)
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 	log.Println("Loaded configuration successfully.")
 
 	// Load the secrets file
-	secrets, err := loadSecrets("secrets.yaml")
+	secrets, err := loadSecrets(secretsConfigPath)
 	if err != nil {
 		log.Fatalf("Failed to load secrets: %v", err)
 	}
@@ -65,7 +82,7 @@ func main() {
 		log.Printf("Starting sync for registry: %s/%s to %s/%s", registry.SourceRegistry, registry.SourceRepository, registry.DestRegistry, registry.DestRepository)
 
 		// Retrieve the credentials for the destination registry
-		secret := getSecretConfig(registry.DestRegistry, secrets.Secrets)
+		secret, _ := getSecretConfig(registry.DestRegistry, secrets.Secrets)
 
 		if isGCR(secret) && secret.ServiceAccountKey != "" {
 			// Authenticate using the service account key
@@ -77,7 +94,7 @@ func main() {
 			secret.Password = token
 		}
 
-		if err := syncRegistry(registry, secret.Username, secret.Password); err != nil {
+		if err := syncRegistryParallel(registry, secret.Username, secret.Password, secrets); err != nil {
 			log.Printf("Failed to sync %s: %v", registry.SourceRepository, err)
 		} else {
 			log.Printf("Completed sync for %s/%s", registry.SourceRegistry, registry.SourceRepository)
@@ -117,13 +134,13 @@ func loadSecrets(filename string) (*Secrets, error) {
 	return &secrets, nil
 }
 
-func getSecretConfig(destRegistry string, secrets []SecretConfig) SecretConfig {
+func getSecretConfig(registry string, secrets []SecretConfig) (SecretConfig, bool) {
 	for _, secret := range secrets {
-		if secret.DestRegistry == destRegistry {
-			return secret
+		if secret.DestRegistry == registry || secret.SourceRegistry == registry {
+			return secret, true
 		}
 	}
-	return SecretConfig{}
+	return SecretConfig{}, false
 }
 
 func getGCRToken(serviceAccountKeyPath string) (string, error) {
@@ -150,12 +167,28 @@ func isGCR(secret SecretConfig) bool {
 	return secret.Type == "gcr"
 }
 
-func syncRegistry(registry RegistryConfig, username, password string) error {
+func syncRegistryParallel(registry RegistryConfig, username, password string, secrets *Secrets) error {
 	ctx := context.Background()
 
 	// Create a source image reference to fetch tags
 	log.Printf("Fetching tags from source repository: %s/%s", registry.SourceRegistry, registry.SourceRepository)
-	sourceCtx := &types.SystemContext{}
+
+	// Retrieve credentials for the source registry if necessary
+	sourceSecret, hasSourceCredentials := getSecretConfig(registry.SourceRegistry, secrets.Secrets)
+
+	var sourceCtx *types.SystemContext
+	if hasSourceCredentials && sourceSecret.SourceType == "dockerhub" {
+		// Setup source context with credentials for Docker Hub or other source registries
+		sourceCtx = &types.SystemContext{
+			DockerAuthConfig: &types.DockerAuthConfig{
+				Username: sourceSecret.Username,
+				Password: sourceSecret.Password,
+			},
+		}
+	} else {
+		sourceCtx = &types.SystemContext{}
+	}
+
 	sourceImage := fmt.Sprintf("%s/%s", registry.SourceRegistry, registry.SourceRepository)
 	sourceRef, err := docker.ParseReference("//" + sourceImage)
 	if err != nil {
@@ -173,81 +206,108 @@ func syncRegistry(registry RegistryConfig, username, password string) error {
 	filteredTags := filterTags(tags, registry.ExcludePatterns)
 	log.Printf("Filtered tags: %v", filteredTags)
 
-	// Sort the tags (assuming semantic versioning)
-	log.Println("Sorting tags to determine the latest ones.")
-	sort.Slice(filteredTags, func(i, j int) bool {
-		return filteredTags[i] > filteredTags[j]
-	})
+	// Sort the tags using semantic versioning
+	sortedTags := sortTags(filteredTags)
+	log.Printf("Sorted tags: %v", sortedTags)
 
 	// Take the latest tags based on the tag limit
-	if len(filteredTags) > registry.TagLimit {
-		filteredTags = filteredTags[:registry.TagLimit]
+	if len(sortedTags) > registry.TagLimit {
+		sortedTags = sortedTags[:registry.TagLimit]
 	}
-	log.Printf("Selected %d latest tags for syncing: %v", len(filteredTags), filteredTags)
+	log.Printf("Selected %d latest tags for syncing: %v", len(sortedTags), sortedTags)
+
+	var wg sync.WaitGroup
+	for _, tag := range sortedTags {
+		wg.Add(1)
+		go func(tag string) {
+			defer wg.Done()
+			if err := pullAndPushImage(ctx, registry, tag, username, password, sourceCtx); err != nil {
+				log.Printf("Failed to sync image %s: %v", tag, err)
+			}
+		}(tag)
+	}
+	wg.Wait()
+
+	return nil
+}
+
+// sortTags sorts the tags based on semantic versioning
+func sortTags(tags []string) []string {
+	var validVersions []semver.Version
+	tagMap := make(map[string]string)
+
+	for _, tag := range tags {
+		// Remove any 'v' prefix for semantic version parsing
+		trimmedTag := strings.TrimPrefix(tag, "v")
+
+		// Attempt to parse the semantic version
+		version, err := semver.Parse(trimmedTag)
+		if err == nil {
+			validVersions = append(validVersions, version)
+			tagMap[version.String()] = tag // Keep the original tag mapping
+		}
+	}
+
+	// Sort the versions
+	sort.Slice(validVersions, func(i, j int) bool {
+		return validVersions[i].GT(validVersions[j]) // Sort in descending order
+	})
+
+	// Rebuild the sorted tags list from the version map
+	var sortedTags []string
+	for _, version := range validVersions {
+		sortedTags = append(sortedTags, tagMap[version.String()])
+	}
+
+	return sortedTags
+}
+
+func pullAndPushImage(ctx context.Context, registry RegistryConfig, tag, username, password string, sourceCtx *types.SystemContext) error {
+	fullSourceImage := fmt.Sprintf("%s/%s:%s", registry.SourceRegistry, registry.SourceRepository, tag)
+	fullDestImage := fmt.Sprintf("%s/%s:%s", registry.DestRegistry, registry.DestRepository, tag)
+
+	log.Printf("Syncing image %s to %s", fullSourceImage, fullDestImage)
+
+	// Parse the source reference again with the tag
+	srcRef, err := docker.ParseReference("//" + fullSourceImage)
+	if err != nil {
+		return fmt.Errorf("Failed to parse source image reference for %s: %v", fullSourceImage, err)
+	}
+
+	destRef, err := docker.ParseReference("//" + fullDestImage)
+	if err != nil {
+		return fmt.Errorf("Failed to parse destination image reference for %s: %v", fullDestImage, err)
+	}
 
 	// Set up the destination context
-	var destCtx *types.SystemContext
-	if username != "" {
-		// Use credentials if provided
-		destCtx = &types.SystemContext{
-			DockerAuthConfig: &types.DockerAuthConfig{
-				Username: username,
-				Password: password,
-			},
-		}
-	} else {
-		// No credentials
-		destCtx = &types.SystemContext{}
+	destCtx := &types.SystemContext{
+		DockerAuthConfig: &types.DockerAuthConfig{
+			Username: username,
+			Password: password,
+		},
 	}
 
-	for _, tag := range filteredTags {
-		fullSourceImage := fmt.Sprintf("%s/%s:%s", registry.SourceRegistry, registry.SourceRepository, tag)
-		fullDestImage := fmt.Sprintf("%s/%s:%s", registry.DestRegistry, registry.DestRepository, tag)
+	// Copy the image from source to destination
+	policyContext, err := signature.NewPolicyContext(&signature.Policy{
+		Default: []signature.PolicyRequirement{signature.NewPRInsecureAcceptAnything()},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create policy context: %w", err)
+	}
+	defer policyContext.Destroy()
 
-		log.Printf("Syncing image %s to %s", fullSourceImage, fullDestImage)
+	start := time.Now()
+	_, err = copy.Image(ctx, policyContext, destRef, srcRef, &copy.Options{
+		SourceCtx:      sourceCtx,
+		DestinationCtx: destCtx,
+	})
+	duration := time.Since(start)
 
-		// Parse the source reference again with the tag
-		srcRef, err := docker.ParseReference("//" + fullSourceImage)
-		if err != nil {
-			log.Printf("Failed to parse source image reference for %s: %v", fullSourceImage, err)
-			continue
-		}
-
-		destRef, err := docker.ParseReference("//" + fullDestImage)
-		if err != nil {
-			log.Printf("Failed to parse destination image reference for %s: %v", fullDestImage, err)
-			continue
-		}
-
-		// Initialize spinner
-		s := spinner.New(spinner.CharSets[14], 100*time.Millisecond) // Choose spinner style and speed
-		s.Start()
-
-		// Copy the image from source to destination
-		policyContext, err := signature.NewPolicyContext(&signature.Policy{
-			Default: []signature.PolicyRequirement{signature.NewPRInsecureAcceptAnything()},
-		})
-		if err != nil {
-			s.Stop()
-			return fmt.Errorf("failed to create policy context: %w", err)
-		}
-		defer policyContext.Destroy()
-
-		start := time.Now()
-		_, err = copy.Image(ctx, policyContext, destRef, srcRef, &copy.Options{
-			SourceCtx:      sourceCtx,
-			DestinationCtx: destCtx,
-		})
-		s.Stop()
-		duration := time.Since(start)
-
-		if err != nil {
-			log.Printf("Failed to sync image %s to %s: %v", fullSourceImage, fullDestImage, err)
-		} else {
-			log.Printf("Successfully synced image %s to %s in %v", fullSourceImage, fullDestImage, duration)
-		}
+	if err != nil {
+		return fmt.Errorf("failed to sync image %s to %s: %v", fullSourceImage, fullDestImage, err)
 	}
 
+	log.Printf("Successfully synced image %s to %s in %v", fullSourceImage, fullDestImage, duration)
 	return nil
 }
 
@@ -268,4 +328,3 @@ func filterTags(tags []string, excludePatterns []string) []string {
 	}
 	return filteredTags
 }
-

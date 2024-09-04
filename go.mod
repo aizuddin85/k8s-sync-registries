@@ -3,7 +3,7 @@ module registries-sync
 go 1.22.6
 
 require (
-	github.com/briandowns/spinner v1.23.1
+	github.com/blang/semver/v4 v4.0.0
 	github.com/containers/image/v5 v5.32.2
 	golang.org/x/oauth2 v0.22.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -25,7 +25,6 @@ require (
 	github.com/docker/docker-credential-helpers v0.8.2 // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/fatih/color v1.15.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.2 // indirect
 	github.com/go-openapi/analysis v0.23.0 // indirect
 	github.com/go-openapi/errors v0.22.0 // indirect
@@ -47,8 +46,6 @@ require (
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/letsencrypt/boulder v0.0.0-20240418210053-89b07f4543e0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/miekg/pkcs11 v1.1.1 // indirect
