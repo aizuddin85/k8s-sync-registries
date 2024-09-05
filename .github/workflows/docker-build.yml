@@ -1,12 +1,6 @@
 name: Docker Build & Push
 
 on:
-  push:
-    branches:
-      - main  # Trigger on push to the main branch
-  pull_request:
-    branches:
-      - main
   release:
     types: [published]  # Trigger on release publish
 
