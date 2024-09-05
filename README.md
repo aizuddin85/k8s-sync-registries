@@ -1,4 +1,4 @@
-![CodeQL](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/codeql.yml/badge.svg)
+![CodeQL](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/codeql.yml/badge.svg) ![Docker Build](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/docker-build.yml/badge.svg)
 
 
 ## License
