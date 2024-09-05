@@ -5,6 +5,9 @@
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## How to get the container image.
+
+1. Latest release image available at `docker.io/mymzbe/k8s-sync-registries:latest`
 
 ## How to build locally
 
@@ -75,3 +78,5 @@ secrets:
     service_account_key: "/root/git/k8s-sync-registries/gcr.json" <-- GCP service account JSON key with proper GCR permission associated to it
     type: "gcr" <-- GCR need special oauth JWT token, code will authenticate to Google and obtain JWT.
 ```
+
+
