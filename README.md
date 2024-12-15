@@ -1,4 +1,7 @@
 ![CodeQL](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/codeql.yml/badge.svg) ![Docker Build](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/docker-build.yml/badge.svg)
+[![Go Tests](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/unittest.yml/badge.svg)](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/unittest.yml)
+[![codecov](https://codecov.io/gh/aizuddin85/k8s-sync-registries/branch/main/graph/badge.svg)](https://codecov.io/gh/aizuddin85/k8s-sync-registries)
+
 
 
 ## License
@@ -46,37 +49,41 @@ b. dnf install gpgme-devel
 
 ```yaml
 registries:
-  - source_registry: "quay.io" <-- Source registry
-    source_repository: "argoproj/argocd" <-- Source repo
-    dest_registry: "europe-west3-docker.pkg.dev" <-- Target registry
-    dest_repository: "$gcp_project/argocd/argocd" <-- Target repo
-    tag_limit: 3 <-- how many newest tag(s) to include and discard the rest
-    exclude_patterns: <-- a regex expression or list to exclude tags with specific tag identifiers.
-      - "alpine"
-      - "distroless"
-      - "^sha"
-      - "poc"
-      - "release"
-      - "latest"
-      - "master
+  - source_registry: "quay.io" # Source registry
+    source_repository: "argoproj/argocd" # Source repo
+    dest_registry: "europe-west3-docker.pkg.dev" # Target registry
+    dest_repository: "$gcp_project/argocd/argocd" # Target repo
+    tag_limit: 3 # how many newest tag(s) to include and discard the rest
+    insecure_tls: true  # Enable insecure TLS
+    exclude_patterns: # a regex expression or list to exclude tags with specific tag identifiers.
+      - "alpha"
+      - "beta"
       - "rc"
+    version_filters: # list of major.version to fetch.
+      - major: 1
+        minor: 11
+        get_latest: false
+      - major: 1
+        minor: 10
+        get_latest: false
 ```
 
 3. Once we have populated registries.yaml, if the registry required authentication, it must be set in secrets.yaml
    
 ```yaml
 secrets:
-  - source_registry: "docker.io" <-- for source registry authentication
-    source_type: "dockerhub" <-- Registry type against auth, support dockerhub, acr and gcr. Typicall username and password login should use "dockerhub" as type.
-    username: "docker_user" <-- username for the registry
-    password: "docker_pass" <-- password for the registry
+  - source_registry: "docker.io" # for source registry authentication
+    source_type: "dockerhub" # Registry type against auth, support dockerhub, acr and gcr. Typicall username and password login should use "dockerhub" as type.
+    username: "docker_user" # username for the registry
+    password: "docker_pass" # password for the registry
+    insecure_tls: true # enable insecure TLS
   - dest_registry: "myregistry.azurecr.io"
-    username: "acr_token_user" <--  Azure ACR, acr token user from ACR Token
-    password: "acr_token_pass" <--  Azure ACR, acr token pass from ACR Token
-    type: "acr" <-- Authenticate against ACR
+    username: "acr_token_user" #  Azure ACR, acr token user from ACR Token
+    password: "acr_token_pass" #  Azure ACR, acr token pass from ACR Token
+    type: "acr" # Authenticate against ACR
   - dest_registry: "europe-west3-docker.pkg.dev"
-    service_account_key: "/root/git/k8s-sync-registries/gcr.json" <-- GCP service account JSON key with proper GCR permission associated to it
-    type: "gcr" <-- GCR need special oauth JWT token, code will authenticate to Google and obtain JWT.
+    service_account_key: "/root/git/k8s-sync-registries/gcr.json" # GCP service account JSON key with proper GCR permission associated to it
+    type: "gcr" # GCR need special oauth JWT token, code will authenticate to Google and obtain JWT.
 ```
 
 
