@@ -19,6 +19,13 @@ jobs:
       with:
         go-version: '1.21'
 
+    - name: Setup test environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          gpg \
+          libgpgme-dev 
+
     - name: Install dependencies
       run: |
         go mod download
