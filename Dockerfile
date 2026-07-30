@@ -1,5 +1,5 @@
-# Use Alpine as the base image for building
-FROM alpine:latest AS builder
+# Use a pinned Alpine version for reproducible builds
+FROM alpine:3.21 AS builder
 
 # Install Go and dependencies needed for GPGME and building
 RUN apk update && apk upgrade && apk add --no-cache \
@@ -11,30 +11,23 @@ RUN apk update && apk upgrade && apk add --no-cache \
     pkgconfig \
     make
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Copy the Go module files
 COPY go.mod go.sum ./
-
-# Download the dependencies
 RUN go mod download
 
-# Copy the source code
 COPY . .
 
-# Build the Go app
-RUN go build -o /app/sync_registries
+# Build a statically linked-friendly binary with CGO for gpgme
+RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /app/sync_registries .
 
-# Final image stage: use a smaller Alpine base image to run the Go app
-FROM alpine:latest
+FROM alpine:3.21
 
-# Install runtime dependencies
-RUN apk update && apk upgrade && apk add --no-cache gpgme
+RUN apk update && apk upgrade && apk add --no-cache gpgme ca-certificates \
+    && adduser -D -H -u 65532 syncer
 
-# Copy the Go binary from the builder stage
 COPY --from=builder /app/sync_registries /app/sync_registries
 
-# Command to run the Go program
-CMD ["/app/sync_registries"]
+USER 65532:65532
 
+CMD ["/app/sync_registries"]

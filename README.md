@@ -2,64 +2,65 @@
 [![Go Tests](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/unittest.yml/badge.svg)](https://github.com/aizuddin85/k8s-sync-registries/actions/workflows/unittest.yml)
 [![codecov](https://codecov.io/gh/aizuddin85/k8s-sync-registries/branch/main/graph/badge.svg)](https://codecov.io/gh/aizuddin85/k8s-sync-registries)
 
-
+Mirror container image tags from public registries into private registries, with semver filtering and optional Helm CronJob deployment.
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## How to get the container image.
+## How to get the container image
 
-1. Latest release image available at `docker.io/mymzbe/k8s-sync-registries:latest`
+Latest release image: `docker.io/mymzbe/k8s-sync-registries:latest`
 
 ## How to build locally
 
-For GCR, ensure JSON key is provided and access to registry is properly configured.  
+For GCR, ensure a JSON service-account key is provided and registry access is configured.
 
-1. Ensure gpgme library install  
-a. apt-get install libgpgme-dev  
-b. dnf install gpgme-devel  
-
-2. Update modules `go mod tidy`  
-
-3. To run the directly, execute `go run main.go` 
- 
-4. To build the binary, execute `go build -o sync_registries`
+1. Install the gpgme development library:
+   - Debian/Ubuntu: `apt-get install libgpgme-dev`
+   - Fedora/RHEL: `dnf install gpgme-devel`
+2. Update modules: `go mod tidy`
+3. Run directly: `go run .`
+4. Build the binary: `go build -o sync_registries`
 
 ## How to run
 
-1. Ensure registries.yaml properly populated with source and destination as well as repo to sync.
+1. Populate `registries.yaml` with source/destination registries and repositories to sync.
+2. If authentication is required, populate `secrets.yaml`.
+3. Set environment variables and run:
 
-2. If the registry required authenticaion, update secret.yaml with its authentication details.
+```bash
+export REGISTRY_CONFIG_PATH=./registries.yaml
+export SECRETS_CONFIG_PATH=./secrets.yaml
+# optional: limit parallel image copies (default 3)
+export SYNC_CONCURRENCY=3
+./sync_registries
+```
 
-2. Run `sync_registries` to begin sync.
+The process exits non-zero if any registry sync fails.
 
 ## How to build container image
 
-1. Execute `podman build -t <registry/repo/image:v1.0.0> .`
-   NOTE: Ensure your build environment has internet connection.
-   
-2. To push to registry `podman push <registry/repo/image:v1.0.0>`, follow your registry authentication method if pushing to protected registry.
-
+1. `podman build -t <registry/repo/image:v1.0.0> .`
+2. `podman push <registry/repo/image:v1.0.0>`
 
 ## Managing registries.yaml and secrets.yaml
-1. Source and target registries also image are defined here.
-   
-2. The structure of the registries.yaml
+
+### registries.yaml
 
 ```yaml
 registries:
-  - source_registry: "quay.io" # Source registry
-    source_repository: "argoproj/argocd" # Source repo
-    dest_registry: "europe-west3-docker.pkg.dev" # Target registry
-    dest_repository: "$gcp_project/argocd/argocd" # Target repo
-    tag_limit: 3 # how many newest tag(s) to include and discard the rest
-    insecure_tls: true  # Enable insecure TLS
-    exclude_patterns: # a regex expression or list to exclude tags with specific tag identifiers.
+  - source_registry: "quay.io"
+    source_repository: "argoproj/argocd"
+    dest_registry: "europe-west3-docker.pkg.dev"
+    dest_repository: "$gcp_project/argocd/argocd"
+    tag_limit: 3
+    insecure_tls: false
+    exclude_patterns:
       - "alpha"
       - "beta"
       - "rc"
-    version_filters: # list of major.version to fetch.
+    version_filters:
       - major: 1
         minor: 11
         get_latest: false
@@ -68,22 +69,27 @@ registries:
         get_latest: false
 ```
 
-3. Once we have populated registries.yaml, if the registry required authentication, it must be set in secrets.yaml
-   
+- `tag_limit`: max tags kept per minor version (or overall when `version_filters` is empty)
+- `exclude_patterns`: regex patterns; matching tags are skipped
+- `version_filters`: select major.minor lines; `get_latest: true` keeps only the newest patch
+- When `version_filters` is omitted/empty, all valid `x.y.z` semver tags are considered (newest first), then `tag_limit` is applied
+
+### secrets.yaml
+
 ```yaml
 secrets:
-  - source_registry: "docker.io" # for source registry authentication
-    source_type: "dockerhub" # Registry type against auth, support dockerhub, acr and gcr. Typicall username and password login should use "dockerhub" as type.
-    username: "docker_user" # username for the registry
-    password: "docker_pass" # password for the registry
-    insecure_tls: true # enable insecure TLS
+  - source_registry: "docker.io"
+    source_type: "dockerhub"
+    username: "docker_user"
+    password: "docker_pass"
+    insecure_tls: false
   - dest_registry: "myregistry.azurecr.io"
-    username: "acr_token_user" #  Azure ACR, acr token user from ACR Token
-    password: "acr_token_pass" #  Azure ACR, acr token pass from ACR Token
-    type: "acr" # Authenticate against ACR
+    username: "acr_token_user"
+    password: "acr_token_pass"
+    type: "acr"
   - dest_registry: "europe-west3-docker.pkg.dev"
-    service_account_key: "/root/git/k8s-sync-registries/gcr.json" # GCP service account JSON key with proper GCR permission associated to it
-    type: "gcr" # GCR need special oauth JWT token, code will authenticate to Google and obtain JWT.
+    service_account_key: "/gcr/gcr.json"
+    type: "gcr"
 ```
 
-
+Supported auth types: `dockerhub` (generic username/password), `acr`, and `gcr`.
