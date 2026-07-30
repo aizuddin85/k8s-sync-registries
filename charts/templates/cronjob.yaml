@@ -1,9 +1,10 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ .Release.Name }}-sync
+  name: {{ include "sync-registry-cronjob.fullname" . }}
   labels:
-    app: {{ .Release.Name }}
+    app: {{ include "sync-registry-cronjob.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
   schedule: {{ .Values.cronjob.schedule | quote }}
   successfulJobsHistoryLimit: {{ .Values.cronjob.successfulJobsHistoryLimit }}
@@ -11,24 +12,47 @@ spec:
   concurrencyPolicy: {{ .Values.cronjob.concurrencyPolicy }}
   jobTemplate:
     spec:
+      backoffLimit: {{ .Values.cronjob.backoffLimit | default 2 }}
       template:
+        metadata:
+          labels:
+            app: {{ include "sync-registry-cronjob.name" . }}
+            app.kubernetes.io/instance: {{ .Release.Name }}
         spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
           containers:
           - name: sync-app
             image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
             imagePullPolicy: {{ .Values.image.pullPolicy }}
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
             env:
               - name: REGISTRY_CONFIG_PATH
-                value: {{ .Values.env.REGISTRY_CONFIG_PATH }}
+                value: {{ .Values.env.REGISTRY_CONFIG_PATH | quote }}
               - name: SECRETS_CONFIG_PATH
-                value: {{ .Values.env.SECRETS_CONFIG_PATH }}
+                value: {{ .Values.env.SECRETS_CONFIG_PATH | quote }}
+              - name: SYNC_CONCURRENCY
+                value: {{ .Values.env.SYNC_CONCURRENCY | default "3" | quote }}
             volumeMounts:
               - name: config-volume
                 mountPath: /config
+                readOnly: true
               - name: secret-volume
                 mountPath: /secret
+                readOnly: true
               - name: gcr-volume
                 mountPath: /gcr
+                readOnly: true
+              - name: tmp
+                mountPath: /tmp
             resources:
               requests:
                 cpu: {{ .Values.resources.requests.cpu }}
@@ -36,14 +60,15 @@ spec:
               limits:
                 cpu: {{ .Values.resources.limits.cpu }}
                 memory: {{ .Values.resources.limits.memory }}
-          restartPolicy: OnFailure
           volumes:
           - name: secret-volume
             secret:
-              secretName: registries-secret
+              secretName: {{ include "sync-registry-cronjob.fullname" . }}-secret
           - name: config-volume
             configMap:
-              name: registries-config
+              name: {{ include "sync-registry-cronjob.fullname" . }}-config
           - name: gcr-volume
             secret:
-              secretName: registries-gcr-secret
+              secretName: {{ include "sync-registry-cronjob.fullname" . }}-gcr
+          - name: tmp
+            emptyDir: {}

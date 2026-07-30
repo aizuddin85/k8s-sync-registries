@@ -7,22 +7,24 @@ cronjob:
   schedule: "0 0 * * *"  # Every day at midnight
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 1
-  concurrencyPolicy: "Allow"
+  concurrencyPolicy: "Forbid"
+  backoffLimit: 2
 
 env:
   REGISTRY_CONFIG_PATH: "/config/registry.yaml"
   SECRETS_CONFIG_PATH: "/secret/secrets.yaml"
+  SYNC_CONCURRENCY: "3"
 
 resources:
   requests:
     cpu: 100m
     memory: 128Mi
   limits:
-    cpu: 200m
-    memory: 256Mi
+    cpu: 500m
+    memory: 512Mi
 
 gcr:
-  secrets: "base64 json here"
+  secrets: ""
 
 config:
   registries:
@@ -31,6 +33,7 @@ config:
       dest_registry: "europe-west3-docker.pkg.dev"
       dest_repository: "$gcp_project/argocd/argocd"
       tag_limit: 3
+      insecure_tls: false
       exclude_patterns:
         - "alpine"
         - "distroless"
@@ -40,6 +43,13 @@ config:
         - "latest"
         - "master"
         - "rc"
+      version_filters:
+        - major: 2
+          minor: 12
+          get_latest: false
+        - major: 2
+          minor: 11
+          get_latest: false
     - source_registry: "ghcr.io"
       source_repository: "dexidp/dex"
       dest_registry: "europe-west3-docker.pkg.dev"
@@ -54,6 +64,10 @@ config:
         - "latest"
         - "master"
         - "rc"
+      version_filters:
+        - major: 2
+          minor: 41
+          get_latest: true
     - source_registry: "registry.k8s.io"
       source_repository: "kube-state-metrics/kube-state-metrics"
       dest_registry: "europe-west3-docker.pkg.dev"
@@ -64,6 +78,10 @@ config:
         - "alpha"
         - "beta"
         - "sha"
+      version_filters:
+        - major: 2
+          minor: 13
+          get_latest: false
     - source_registry: "registry.k8s.io"
       source_repository: "autoscaling/cluster-autoscaler"
       dest_registry: "europe-west3-docker.pkg.dev"
@@ -74,19 +92,16 @@ config:
         - "alpha"
         - "beta"
         - "sha"
-    - source_registry: "registry.k8s.io"
-      source_repository: "kube-state-metrics/kube-state-metrics"
-      dest_registry: "$acrregistry.azurecr.io"
-      dest_repository: "kube-state-metrics/kube-state-metrics"
-      tag_limit: 5
-      exclude_patterns:
-        - "sha"
-    - source_registry: "registry.k8s.io"
-      source_repository: "autoscaling/cluster-autoscaler"
-      dest_registry: "$acrregistry.azurecr.io"
-      dest_repository: "autoscaling/cluster-autoscaler"
-      tag_limit: 5
-      exclude_patterns:
-        - "sha"
+      version_filters:
+        - major: 1
+          minor: 30
+          get_latest: false
 
 secrets:
+  - dest_registry: "europe-west3-docker.pkg.dev"
+    type: "gcr"
+    service_account_key: "/gcr/gcr.json"
+  - source_registry: "docker.io"
+    source_type: "dockerhub"
+    username: "example"
+    password: "example"
